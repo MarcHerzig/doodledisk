@@ -35,6 +35,30 @@ describe('compute', () => {
   });
 });
 
+describe('compute part', () => {
+  const set = { ...DEFAULTS, modus: 'set', contours: [square] };
+  it('schablone ist Standard', () => {
+    const r = compute(wasm, set, { part: 'schablone' });
+    expect(r.stats.ausschnitte).toBe(1);
+  });
+  for (const part of ['abdeckung', 'halter']) {
+    it(`${part}: Mesh, keine Warnungen, Kennzahlen`, () => {
+      const r = compute(wasm, set, { part });
+      expect(r.indices.length).toBeGreaterThan(100);
+      expect(r.warnings).toEqual([]);
+      expect(r.stats.ausschnitte).toBe(0);
+      expect(r.stats.volumeCm3).toBeGreaterThan(1);
+      expect(r.stats.minutes).toBeGreaterThanOrEqual(0);
+    });
+    it(`${part} grob: warnings und stats null`, () => {
+      const r = compute(wasm, set, { part, fine: false });
+      expect(r.indices.length).toBeGreaterThan(100);
+      expect(r.warnings).toBeNull();
+      expect(r.stats).toBeNull();
+    });
+  }
+});
+
 describe('estimateMinutes', () => {
   it('rechnet mit 5 mm³/s', () => {
     expect(estimateMinutes(18000)).toBe(60);

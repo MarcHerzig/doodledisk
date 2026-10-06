@@ -1,4 +1,6 @@
 import { buildDisk, clampState } from './disk.js';
+import { buildCover } from './cover.js';
+import { buildHolder } from './holder.js';
 import { analyze } from './checks.js';
 import { isOk, volumeOf } from './wasm.js';
 
@@ -8,10 +10,11 @@ export function estimateMinutes(volumeMm3) {
   return Math.round(volumeMm3 / FLOW_MM3_PER_S / 60);
 }
 
-export function compute(wasm, rawState, { fine = true } = {}) {
+export function compute(wasm, rawState, { fine = true, part = 'schablone' } = {}) {
   const state = clampState(rawState);
-  const check = fine ? analyze(wasm, state) : null;
-  const disk = buildDisk(wasm, state, { fine });
+  const isSchablone = part !== 'abdeckung' && part !== 'halter';
+  const check = fine && isSchablone ? analyze(wasm, state) : null;
+  const disk = part === 'abdeckung' ? buildCover(wasm, state) : part === 'halter' ? buildHolder(wasm, state, { forPrint: true }) : buildDisk(wasm, state, { fine });
   try {
     if (!isOk(disk)) throw new Error(`Das Modell ist nicht wasserdicht (${disk.status()}).`);
     const mesh = disk.getMesh();
@@ -29,10 +32,12 @@ export function compute(wasm, rawState, { fine = true } = {}) {
       positions,
       indices,
       volume,
-      warnings: check ? check.warnings : null,
+      warnings: check ? check.warnings : fine && !isSchablone ? [] : null,
       stats: check
         ? { ausschnitte: check.stats.ausschnitte, volumeCm3: volume / 1000, minutes: estimateMinutes(volume) }
-        : null,
+        : fine && !isSchablone
+          ? { ausschnitte: 0, volumeCm3: volume / 1000, minutes: estimateMinutes(volume) }
+          : null,
     };
   } finally {
     disk.delete();
