@@ -1,0 +1,107 @@
+import { scope } from './wasm.js';
+
+export const DEFAULTS = {
+  durchmesser: 120,
+  dicke: 3,
+  fasenTiefe: 1,
+  fasenAufweitung: 0.8,
+  fasenOben: true,
+  offsetX: 0,
+  offsetY: 0,
+  winkel: 0,
+  skalierung: 1,
+};
+
+export const LAYER = 0.2;
+const OVERLAP = 0.01;
+const FIT = 0.8;
+
+const LIMITS = {
+  durchmesser: [30, 250],
+  dicke: [1, 20],
+  fasenTiefe: [0, 20],
+  fasenAufweitung: [0, 5],
+  skalierung: [0.05, 5],
+  winkel: [-360, 360],
+  offsetX: [-200, 200],
+  offsetY: [-200, 200],
+};
+
+export function clampState(s) {
+  const out = { ...s };
+  for (const [k, [lo, hi]] of Object.entries(LIMITS)) {
+    const v = Number(s[k]);
+    out[k] = Number.isFinite(v) && s[k] !== '' && s[k] !== null ? Math.min(hi, Math.max(lo, v)) : DEFAULTS[k];
+  }
+  out.fasenTiefe = Math.min(out.fasenTiefe, out.dicke);
+  out.fasenOben = s.fasenOben !== false;
+  out.contours = s.contours || [];
+  return out;
+}
+
+export function fitContours(contours, durchmesser) {
+  const pts = contours.flat();
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const centered = contours.map((c) => c.map(([x, y]) => [x - cx, y - cy]));
+  const maxR = Math.max(...centered.flat().map(([x, y]) => Math.hypot(x, y)));
+  const limit = (FIT * durchmesser) / 2;
+  return { contours: centered, skalierung: maxR > limit ? limit / maxR : 1 };
+}
+
+export function transformContours(contours, { skalierung, winkel, offsetX, offsetY }) {
+  const a = (winkel * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return contours.map((ct) =>
+    ct.map(([x, y]) => {
+      const X = x * skalierung;
+      const Y = y * skalierung;
+      return [X * c - Y * s + offsetX, X * s + Y * c + offsetY];
+    }),
+  );
+}
+
+export function layerPlan(state, fine = true) {
+  const { dicke, fasenTiefe, fasenAufweitung, fasenOben } = state;
+  const D = Math.min(fasenTiefe, dicke);
+  if (D <= 0 || fasenAufweitung <= 0) return [{ z0: 0, h: dicke, offset: 0 }];
+  const full = Math.max(1, Math.round(D / LAYER));
+  const n = fine ? full : Math.min(4, full);
+  const hl = D / n;
+  const base = dicke - D;
+  const plan = [];
+  if (base > 1e-9) plan.push({ z0: fasenOben ? 0 : D, h: base, offset: 0 });
+  for (let i = 1; i <= n; i++) {
+    const offset = (fasenAufweitung * i) / n;
+    plan.push({ z0: fasenOben ? base + (i - 1) * hl : D - i * hl, h: hl, offset });
+  }
+  return plan;
+}
+
+export function buildDisk(wasm, rawState, { fine = true } = {}) {
+  const { Manifold, CrossSection } = wasm;
+  const state = clampState(rawState);
+  const R = state.durchmesser / 2;
+  const disk = Manifold.cylinder(state.dicke, R, R, 128);
+  if (!state.contours.length) return disk;
+
+  const s = scope();
+  try {
+    const placed = transformContours(state.contours, state);
+    const base = s.t(CrossSection.ofPolygons(placed, 'EvenOdd'));
+    const cutters = layerPlan(state, fine).map((l) => {
+      const cs = l.offset > 0 ? s.t(base.offset(l.offset, 'Round', 2, 24)) : base;
+      const e = s.t(Manifold.extrude(cs, l.h + 2 * OVERLAP));
+      return s.t(e.translate([0, 0, l.z0 - OVERLAP]));
+    });
+    const cutter = s.t(Manifold.union(cutters));
+    const result = disk.subtract(cutter);
+    disk.delete();
+    return result;
+  } finally {
+    s.done();
+  }
+}
