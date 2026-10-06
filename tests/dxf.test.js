@@ -62,7 +62,29 @@ describe('readDxf', () => {
   });
 
   it('wirft eine verständliche Meldung bei Müll-Dateien', () => {
-    expect(() => readDxf('hallo das ist kein dxf')).toThrow();
+    expect(() => readDxf('hallo das ist kein dxf')).toThrow(/DXF|unterstützt/);
     expect(() => readDxf(dxf([text()]))).toThrow(/unterstützt/);
+  });
+
+  it('hält die Bogenabweichung in mm auch bei Zoll-Zeichnungen ein', () => {
+    const { polylines } = readDxf(dxf([circle(0, 0, 2)], { insunits: 1 }));
+    const pts = polylines[0].points;
+    const R = 50.8;
+    for (const [x, y] of pts) expect(Math.hypot(x, y)).toBeCloseTo(R, 6);
+    for (let i = 0; i < pts.length; i++) {
+      const [x0, y0] = pts[i];
+      const [x1, y1] = pts[(i + 1) % pts.length];
+      const chord = Math.hypot(x1 - x0, y1 - y0);
+      const sagitta = R - Math.sqrt(R * R - (chord / 2) ** 2);
+      expect(sagitta).toBeLessThanOrEqual(0.02 + 1e-9);
+    }
+  });
+
+  it('überspringt kaputte Elemente statt mit TypeError abzubrechen', () => {
+    const brokenLine = '0\nLINE\n8\n0\n10\n0\n20\n0\n30\n0\n';
+    const { polylines, ignored } = readDxf(dxf([line(0, 0, 1, 0), brokenLine]));
+    expect(polylines).toHaveLength(1);
+    expect(ignored).toEqual({ LINE: 1 });
+    expect(() => readDxf(dxf([brokenLine]))).toThrow(/unterstützt/);
   });
 });

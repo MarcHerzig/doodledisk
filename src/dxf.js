@@ -3,13 +3,13 @@ import DxfParser from 'dxf-parser';
 const SAG = 0.02; // mm, max. Abweichung beim Abtasten von Bögen
 const UNIT_FACTOR = { 1: 25.4, 2: 304.8, 4: 1, 5: 10, 6: 1000 };
 
-function steps(r, sweep) {
-  if (r <= SAG) return 2;
-  return Math.max(2, Math.ceil(Math.abs(sweep) / (2 * Math.acos(1 - SAG / r))));
+function steps(r, sweep, sag) {
+  if (r <= sag) return 2;
+  return Math.max(2, Math.ceil(Math.abs(sweep) / (2 * Math.acos(1 - sag / r))));
 }
 
-function arcPoints(cx, cy, r, a0, sweep) {
-  const n = steps(r, sweep);
+function arcPoints(cx, cy, r, a0, sweep, sag) {
+  const n = steps(r, sweep, sag);
   const pts = [];
   for (let i = 0; i <= n; i++) {
     const a = a0 + (sweep * i) / n;
@@ -18,7 +18,7 @@ function arcPoints(cx, cy, r, a0, sweep) {
   return pts;
 }
 
-function bulgeInterior(p0, p1, bulge) {
+function bulgeInterior(p0, p1, bulge, sag) {
   const theta = 4 * Math.atan(bulge);
   const dx = p1.x - p0.x;
   const dy = p1.y - p0.y;
@@ -29,10 +29,10 @@ function bulgeInterior(p0, p1, bulge) {
   const cy = (p0.y + p1.y) / 2 + (dx / c) * d;
   const r = Math.hypot(p0.x - cx, p0.y - cy);
   const a0 = Math.atan2(p0.y - cy, p0.x - cx);
-  return arcPoints(cx, cy, r, a0, theta).slice(1, -1);
+  return arcPoints(cx, cy, r, a0, theta, sag).slice(1, -1);
 }
 
-function polylinePoints(vertices, closed) {
+function polylinePoints(vertices, closed, sag) {
   const out = [];
   const n = vertices.length;
   const segs = closed ? n : n - 1;
@@ -40,7 +40,7 @@ function polylinePoints(vertices, closed) {
     const p0 = vertices[i];
     const p1 = vertices[(i + 1) % n];
     out.push([p0.x, p0.y]);
-    if (p0.bulge) out.push(...bulgeInterior(p0, p1, p0.bulge));
+    if (p0.bulge) out.push(...bulgeInterior(p0, p1, p0.bulge, sag));
   }
   if (!closed) {
     const l = vertices[n - 1];
@@ -89,42 +89,63 @@ function splinePoints(e) {
   return out;
 }
 
+function convert(e, sag, polylines) {
+  switch (e.type) {
+    case 'LINE':
+      polylines.push({ points: [[e.vertices[0].x, e.vertices[0].y], [e.vertices[1].x, e.vertices[1].y]], closed: false });
+      return;
+    case 'CIRCLE': {
+      const pts = arcPoints(e.center.x, e.center.y, e.radius, 0, 2 * Math.PI, sag);
+      pts.pop();
+      polylines.push({ points: pts, closed: true });
+      return;
+    }
+    case 'ARC': {
+      let sweep = e.endAngle - e.startAngle;
+      if (sweep <= 0) sweep += 2 * Math.PI;
+      polylines.push({ points: arcPoints(e.center.x, e.center.y, e.radius, e.startAngle, sweep, sag), closed: false });
+      return;
+    }
+    case 'LWPOLYLINE':
+    case 'POLYLINE': {
+      const closed = Boolean(e.shape || e.closed);
+      if (e.vertices.length >= 2) polylines.push({ points: polylinePoints(e.vertices, closed, sag), closed });
+      return;
+    }
+    case 'SPLINE': {
+      const points = splinePoints(e);
+      if (points.length >= 2) polylines.push({ points, closed: false });
+      return;
+    }
+    default:
+      throw new Error('unsupported');
+  }
+}
+
+const SUPPORTED = new Set(['LINE', 'CIRCLE', 'ARC', 'LWPOLYLINE', 'POLYLINE', 'SPLINE']);
+
 export function readDxf(text) {
-  const parsed = new DxfParser().parseSync(text);
+  let parsed;
+  try {
+    parsed = new DxfParser().parseSync(text);
+  } catch {
+    throw new Error('Datei konnte nicht als DXF gelesen werden.');
+  }
   const entities = (parsed && parsed.entities) || [];
+  const unitFactor = UNIT_FACTOR[Number(parsed?.header?.$INSUNITS)] ?? 1;
+  const sag = SAG / unitFactor; // Abweichung von 0.02 mm gilt in mm, nicht in Zeichnungseinheiten
   const polylines = [];
   const ignored = {};
 
   for (const e of entities) {
-    switch (e.type) {
-      case 'LINE':
-        polylines.push({ points: [[e.vertices[0].x, e.vertices[0].y], [e.vertices[1].x, e.vertices[1].y]], closed: false });
-        break;
-      case 'CIRCLE': {
-        const pts = arcPoints(e.center.x, e.center.y, e.radius, 0, 2 * Math.PI);
-        pts.pop();
-        polylines.push({ points: pts, closed: true });
-        break;
-      }
-      case 'ARC': {
-        let sweep = e.endAngle - e.startAngle;
-        if (sweep <= 0) sweep += 2 * Math.PI;
-        polylines.push({ points: arcPoints(e.center.x, e.center.y, e.radius, e.startAngle, sweep), closed: false });
-        break;
-      }
-      case 'LWPOLYLINE':
-      case 'POLYLINE': {
-        const closed = Boolean(e.shape || e.closed);
-        if (e.vertices && e.vertices.length >= 2) polylines.push({ points: polylinePoints(e.vertices, closed), closed });
-        break;
-      }
-      case 'SPLINE': {
-        const points = splinePoints(e);
-        if (points.length >= 2) polylines.push({ points, closed: false });
-        break;
-      }
-      default:
-        ignored[e.type] = (ignored[e.type] || 0) + 1;
+    if (!SUPPORTED.has(e.type)) {
+      ignored[e.type] = (ignored[e.type] || 0) + 1;
+      continue;
+    }
+    try {
+      convert(e, sag, polylines);
+    } catch {
+      ignored[e.type] = (ignored[e.type] || 0) + 1; // kaputtes Element überspringen
     }
   }
 
@@ -132,7 +153,6 @@ export function readDxf(text) {
     throw new Error('Keine unterstützten Zeichenelemente gefunden (LINE, ARC, CIRCLE, POLYLINE, SPLINE).');
   }
 
-  const unitFactor = UNIT_FACTOR[Number(parsed?.header?.$INSUNITS)] ?? 1;
   if (unitFactor !== 1) {
     for (const pl of polylines) pl.points = pl.points.map(([x, y]) => [x * unitFactor, y * unitFactor]);
   }
