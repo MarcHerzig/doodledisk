@@ -49,4 +49,23 @@ describe('glyphs', () => {
       s.done();
     }
   });
+
+  it('oben der Ziffer zeigt radial nach aussen (7: Segment a aussen, Fuss innen)', () => {
+    for (const ang of [90, 0, 200]) {
+      const s = scope();
+      try {
+        const r = 54;
+        const cs = s.t(numberAt(wasm, s, 7, ang, r));
+        const a = (ang * Math.PI) / 180;
+        const ux = Math.cos(a), uy = Math.sin(a);
+        const probe = (rad) => s.t(cs.intersect(s.t(wasm.CrossSection.circle(0.8, 16).translate(ux * rad, uy * rad)))).area();
+        // Segment a liegt bei +GH/2 - GS/2 radial aussen; unten (nur Segment c rechts) keine Mitte
+        expect(probe(r + GH / 2 - 0.45)).toBeGreaterThan(0.5);
+        expect(probe(r - GH / 2 + 0.45)).toBeCloseTo(0, 6);
+        // Fuss von 7 liegt tangential rechts (bei Drehung -90 relativ zu ang): unten Mitte leer
+      } finally {
+        s.done();
+      }
+    }
+  });
 });

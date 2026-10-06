@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { loadManifold, scope, isOk } from '../src/wasm.js';
 import { DEFAULTS } from '../src/disk.js';
 import { buildHolder } from '../src/holder.js';
-import { A4_W, A4_H, CLIP_T, KLEMM_SPIEL, RING_SPIEL, TAB_D } from '../src/setparams.js';
+import { A4_W, A4_H, CLIP_T, KLEMM_SPIEL, RING_SPIEL, TAB_D, ENGRAVE } from '../src/setparams.js';
 
 let wasm;
 beforeAll(async () => {
@@ -71,5 +71,50 @@ describe('buildHolder', () => {
       m.delete();
       s.done();
     }
+  });
+
+  it('Pfeil ist auf der Oberkante graviert (Bump bei 90 Grad)', () => {
+    const m = buildHolder(wasm, st());
+    const s = scope();
+    try {
+      const Ro = 60 + RING_SPIEL + 3;
+      // Pfeilmitte: Spitze bei Ro, Basis bei Ro+5; Probe nahe der Basis-Mitte
+      const probe = s.t(wasm.CrossSection.square([1, 1], true).translate(0, Ro + 3));
+      const top = s.t(m.slice(RING_H - ENGRAVE / 2));
+      const deeper = s.t(m.slice(RING_H - 2 * ENGRAVE));
+      expect(s.t(top.intersect(probe)).area()).toBeCloseTo(0, 6);
+      expect(s.t(deeper.intersect(probe)).area()).toBeCloseTo(1, 6);
+      // neben dem Pfeil bleibt der Bump oben voll
+      const beside = s.t(wasm.CrossSection.square([1, 1], true).translate(5, Ro + 3));
+      expect(s.t(top.intersect(beside)).area()).toBeCloseTo(1, 6);
+    } finally {
+      m.delete();
+      s.done();
+    }
+  });
+
+  it('Klemmspalt: im Spalt nur die Rückwand, kein Armmaterial', () => {
+    const m = buildHolder(wasm, st());
+    const s = scope();
+    try {
+      const cs = s.t(m.slice(-(4 + KLEMM_SPIEL) / 2));
+      const b = cs.bounds();
+      expect(b.min[0]).toBeCloseTo(-A4_W / 2 - CLIP_T, 4);
+      expect(b.max[0]).toBeCloseTo(-A4_W / 2, 4);
+    } finally {
+      m.delete();
+      s.done();
+    }
+  });
+
+  it('D=200 ist für beide Seiten wasserdicht, Set-Modus klemmt D=250 auf 200', () => {
+    for (const seite of ['links', 'unten']) {
+      const m = buildHolder(wasm, st({ durchmesser: 200, seite }));
+      expect(isOk(m)).toBe(true);
+      m.delete();
+    }
+    const m = buildHolder(wasm, st({ durchmesser: 250 }));
+    expect(isOk(m)).toBe(true);
+    m.delete();
   });
 });

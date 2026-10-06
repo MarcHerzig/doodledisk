@@ -19,6 +19,7 @@ export function buildHolder(wasm, rawState, { forPrint = false } = {}) {
   const gap = state.blockdicke + KLEMM_SPIEL;
   // Abstand der Blattkante von der Ringmitte: links = halbe Blattbreite, unten = halbe Blatthöhe.
   const edge = (state.seite === 'unten' ? A4_H : A4_W) / 2;
+  if (RING_OUT - 1.5 >= edge) throw new Error('Der Ring passt nicht auf das A4-Blatt (Durchmesser zu gross).');
   const cw = CLIP_W / 2;
   const s = scope();
   try {

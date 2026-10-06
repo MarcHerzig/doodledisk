@@ -59,6 +59,13 @@ describe('compute part', () => {
   }
 });
 
+describe('compute halter mit grossem Durchmesser', () => {
+  it('Set-Modus D=250 wird geklemmt und funktioniert', () => {
+    const r = compute(wasm, { ...DEFAULTS, modus: 'set', durchmesser: 250, contours: [] }, { part: 'halter' });
+    expect(r.indices.length).toBeGreaterThan(100);
+  });
+});
+
 describe('estimateMinutes', () => {
   it('rechnet mit 5 mm³/s', () => {
     expect(estimateMinutes(18000)).toBe(60);
