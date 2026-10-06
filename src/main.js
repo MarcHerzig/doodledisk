@@ -72,20 +72,23 @@ worker.onmessage = (e) => {
   const m = e.data;
   inflight = false;
   if (!pending) $('#busy').hidden = true;
-  if (m.version !== version || !store.get().contours.length) {
+  const current = m.version === version;
+  if (!store.get().contours.length) {
     pump();
     return;
   }
   if (!m.ok) {
-    result = { warnings: [{ level: 'rot', text: m.error }], stats: null };
-    lastFine = null;
-    renderMessages();
-    updateExport();
+    if (current) {
+      result = { warnings: [{ level: 'rot', text: m.error }], stats: null };
+      lastFine = null;
+      renderMessages();
+      updateExport();
+    }
   } else {
     preview.setMesh(m.positions, m.indices);
-    if (m.fine) {
+    if (m.fine && current) {
       result = { warnings: m.warnings, stats: m.stats };
-      lastFine = m.version === version ? { positions: m.positions, indices: m.indices } : null;
+      lastFine = { positions: m.positions, indices: m.indices };
       renderMessages();
       updateExport();
     }
