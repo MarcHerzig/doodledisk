@@ -19,11 +19,23 @@ function makeWorker() {
   return w;
 }
 const TRAP = /RuntimeError|memory access|unreachable|abort/i;
+const MAX_FAILS = 3;
+let failures = 0;
 function restartWorker() {
   if (worker) worker.terminate();
-  worker = makeWorker();
+  worker = null;
   inflight = false;
   lastFine = null;
+  failures++;
+  if (failures >= MAX_FAILS) {
+    pending = null;
+    $('#busy').hidden = true;
+    result = { warnings: [{ level: 'rot', text: 'Die Berechnung kann in diesem Browser nicht gestartet werden. Bitte Seite neu laden oder einen aktuellen Browser nutzen.' }], stats: null };
+    renderMessages();
+    updateExport();
+    return; // kein weiterer Worker, bis eine neue Anfrage kommt
+  }
+  worker = makeWorker();
   if (store.get().contours.length) {
     result = { warnings: [{ level: 'rot', text: 'Berechnung abgebrochen, bitte erneut versuchen.' }], stats: null };
   }
@@ -90,12 +102,17 @@ function pump() {
   pending = null;
   inflight = true;
   $('#busy').hidden = false;
+  if (!worker) {
+    failures = MAX_FAILS - 1; // ein weiterer Versuch, danach greift die Obergrenze erneut
+    worker = makeWorker();
+  }
   worker.postMessage({ id: ++seq, version, fine, state: store.get() });
 }
 
 function onWorkerMessage(e) {
   const m = e.data;
-  if (!m.ok && TRAP.test(m.error || '')) {
+  if (m.ok) failures = 0;
+  else if (m.version === version && TRAP.test(m.error || '')) {
     restartWorker();
     return;
   }
