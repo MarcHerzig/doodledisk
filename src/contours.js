@@ -94,3 +94,69 @@ export function findIntersections(contours, max = 10) {
   }
   return found;
 }
+
+function segDist(p, a, b) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy;
+  let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+// Douglas-Peucker auf einem geschlossenen Ring, iterativ (stacksicher), mindestens 3 Punkte.
+function simplifyRing(ring, tol) {
+  const n = ring.length;
+  if (n <= 3) return ring;
+  let far = 1;
+  let fd = -1;
+  for (let i = 1; i < n; i++) {
+    const d = dist(ring[0], ring[i]);
+    if (d > fd) {
+      fd = d;
+      far = i;
+    }
+  }
+  const keep = new Uint8Array(n);
+  keep[0] = 1;
+  keep[far] = 1;
+  const stack = [[0, far], [far, n]];
+  while (stack.length) {
+    const [i, j] = stack.pop();
+    const a = ring[i];
+    const b = ring[j % n];
+    let md = -1;
+    let mi = -1;
+    for (let k = i + 1; k < j; k++) {
+      const d = segDist(ring[k], a, b);
+      if (d > md) {
+        md = d;
+        mi = k;
+      }
+    }
+    if (mi >= 0 && md > tol) {
+      keep[mi] = 1;
+      stack.push([i, mi], [mi, j]);
+    }
+  }
+  let count = 0;
+  for (let i = 0; i < n; i++) count += keep[i];
+  if (count < 3) {
+    let best = -1;
+    let bd = -1;
+    for (let i = 1; i < n; i++) {
+      if (keep[i]) continue;
+      const d = segDist(ring[i], ring[0], ring[far]);
+      if (d > bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    if (best >= 0) keep[best] = 1;
+  }
+  return ring.filter((_, i) => keep[i]);
+}
+
+export function simplifyContours(contours, tol = 0.01) {
+  return contours.map((c) => simplifyRing(c, tol));
+}

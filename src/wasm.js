@@ -3,10 +3,15 @@ import Module from 'manifold-3d';
 let ready;
 
 export function loadManifold(locateFile) {
-  ready ??= Module(locateFile ? { locateFile } : undefined).then((wasm) => {
-    wasm.setup();
-    return wasm;
-  });
+  ready ??= Module(locateFile ? { locateFile } : undefined)
+    .then((wasm) => {
+      wasm.setup();
+      return wasm;
+    })
+    .catch((err) => {
+      ready = undefined; // fehlgeschlagene Initialisierung nicht zwischenspeichern
+      throw err;
+    });
   return ready;
 }
 

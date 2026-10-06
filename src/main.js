@@ -1,5 +1,5 @@
 import { readDxf } from './dxf.js';
-import { buildContours } from './contours.js';
+import { buildContours, simplifyContours } from './contours.js';
 import { fitContours, clampState } from './disk.js';
 import { createStore } from './state.js';
 import { createPreview } from './preview.js';
@@ -7,11 +7,36 @@ import { stlBuffer, downloadStl } from './export.js';
 
 const $ = (sel) => document.querySelector(sel);
 const store = createStore();
-const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+let worker = null;
+function makeWorker() {
+  const w = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  w.onmessage = onWorkerMessage;
+  w.onerror = (e) => {
+    e.preventDefault?.();
+    restartWorker();
+  };
+  w.onmessageerror = restartWorker;
+  return w;
+}
+const TRAP = /RuntimeError|memory access|unreachable|abort/i;
+function restartWorker() {
+  if (worker) worker.terminate();
+  worker = makeWorker();
+  inflight = false;
+  lastFine = null;
+  if (store.get().contours.length) {
+    result = { warnings: [{ level: 'rot', text: 'Berechnung abgebrochen, bitte erneut versuchen.' }], stats: null };
+  }
+  renderMessages();
+  updateExport();
+  if (pending) pump();
+  else $('#busy').hidden = true;
+}
 
 function onDrag(dx, dy) {
   const s = store.get();
-  store.set({ offsetX: s.offsetX + dx, offsetY: s.offsetY + dy });
+  const base = (v) => (Number.isFinite(v) ? v : 0);
+  store.set({ offsetX: base(s.offsetX) + dx, offsetY: base(s.offsetY) + dy });
 }
 const preview = createPreview($('#view'), { onDrag });
 
@@ -68,8 +93,12 @@ function pump() {
   worker.postMessage({ id: ++seq, version, fine, state: store.get() });
 }
 
-worker.onmessage = (e) => {
+function onWorkerMessage(e) {
   const m = e.data;
+  if (!m.ok && TRAP.test(m.error || '')) {
+    restartWorker();
+    return;
+  }
   inflight = false;
   if (!pending) $('#busy').hidden = true;
   const current = m.version === version;
@@ -94,7 +123,7 @@ worker.onmessage = (e) => {
     }
   }
   pump();
-};
+}
 
 function schedule() {
   version++;
@@ -121,20 +150,31 @@ document.addEventListener('input', (e) => {
 
 $('#center').addEventListener('click', () => store.set({ offsetX: 0, offsetY: 0 }));
 
+const DROP_TEXT = 'DXF hierher ziehen oder klicken';
+
+// Ein fehlgeschlagenes Laden leert Modell und Dateinamen; die rote Meldung bleibt stehen.
+function failLoad(messages) {
+  inputMessages = messages;
+  result = { warnings: [], stats: null };
+  lastFine = null;
+  $('#dropText').textContent = DROP_TEXT;
+  store.set({ contours: [], fileName: '' });
+  renderMessages();
+  updateExport();
+}
+
 async function loadFile(file) {
   if (!file) return;
   inputMessages = [];
   try {
     const { polylines, ignored, unitFactor } = readDxf(await file.text());
-    const { contours, gaps } = buildContours(polylines);
+    const built = buildContours(polylines);
+    const gaps = built.gaps;
+    const contours = simplifyContours(built.contours);
     if (gaps.length) {
       inputMessages = gaps.slice(0, 6).map((g) => ({ level: 'rot', text: `Kontur nicht geschlossen bei x=${g.x.toFixed(2)}, y=${g.y.toFixed(2)}.` }));
+      failLoad(inputMessages);
       preview.showDraft(polylines, gaps);
-      store.set({ contours: [], fileName: '' });
-      result = { warnings: [], stats: null };
-      lastFine = null;
-      renderMessages();
-      updateExport();
       return;
     }
     if (!contours.length) throw new Error('Keine geschlossene Kontur gefunden.');
@@ -148,10 +188,9 @@ async function loadFile(file) {
     store.set({ contours: fit.contours, skalierung: fit.skalierung, winkel: 0, offsetX: 0, offsetY: 0, fileName: file.name.replace(/\.dxf$/i, '') });
     renderMessages();
   } catch (err) {
-    inputMessages = [{ level: 'rot', text: String(err.message || err) }];
-    lastFine = null;
-    renderMessages();
-    updateExport();
+    preview.clearDraft();
+    preview.hideMesh();
+    failLoad([{ level: 'rot', text: String(err.message || err) }]);
   }
 }
 
@@ -159,7 +198,11 @@ const drop = $('#drop');
 const fileInput = $('#file');
 drop.addEventListener('click', () => fileInput.click());
 drop.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && fileInput.click());
-fileInput.addEventListener('change', () => loadFile(fileInput.files[0]));
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files[0];
+  fileInput.value = '';
+  loadFile(f);
+});
 for (const ev of ['dragenter', 'dragover']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); });
 for (const ev of ['dragleave', 'drop']) drop.addEventListener(ev, () => drop.classList.remove('over'));
 drop.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); loadFile(e.dataTransfer.files[0]); });
@@ -178,3 +221,5 @@ syncInputs(store.get());
   preview.setDisk(c.durchmesser, c.dicke);
 }
 renderMessages();
+
+worker = makeWorker();

@@ -5,6 +5,7 @@ import { findIntersections } from './contours.js';
 export const MIN_WALL = 1;
 const THIN_AREA = 0.2; // mm², kleinere Reste sind Rundungsartefakte an Ecken
 const RIM_AREA = 0.01;
+const ISLAND_AREA = 0.05;
 
 const fmt = (v) => v.toFixed(1);
 
@@ -46,7 +47,17 @@ export function analyze(wasm, rawState) {
       warnings.push({ level: 'gelb', rim: true, text: 'Das Motiv ragt über den Scheibenrand.' });
     }
 
-    const thin = thinSpot(s, s.t(disc.subtract(cut)));
+    const material = s.t(disc.subtract(cut));
+    const parts = pieces(s, material).filter((p) => p.area() > ISLAND_AREA);
+    if (parts.length > 1) {
+      parts.sort((x, y) => y.area() - x.area());
+      for (const part of parts.slice(1, 4)) {
+        const bb = part.bounds();
+        warnings.push({ level: 'gelb', text: `Teil ohne Steg fällt heraus bei x=${fmt((bb.min[0] + bb.max[0]) / 2)}, y=${fmt((bb.min[1] + bb.max[1]) / 2)}.` });
+      }
+    }
+
+    const thin = thinSpot(s, material);
     if (thin) {
       warnings.push({ level: 'gelb', text: `Steg unter ${MIN_WALL} mm bei x=${fmt(thin.x)}, y=${fmt(thin.y)}.` });
     }

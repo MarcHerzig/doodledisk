@@ -154,6 +154,10 @@ export function createPreview(canvas, { onDrag }) {
       controls.update();
       render();
     },
+    hideMesh() {
+      if (mesh) mesh.visible = false;
+      render();
+    },
     clearDraft() {
       clearDraft();
       home();

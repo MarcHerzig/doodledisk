@@ -77,3 +77,49 @@ describe('findIntersections', () => {
     expect(findIntersections([[[0, 0], [10, 0], [10, 10], [0, 10]]])).toEqual([]);
   });
 });
+
+import { simplifyContours } from '../src/contours.js';
+
+describe('simplifyContours', () => {
+  it('reduziert einen 4000-Punkte-Kreis bei Abweichung <= tol', () => {
+    const r = 40;
+    const n = 4000;
+    const c = Array.from({ length: n }, (_, i) => [r * Math.cos((2 * Math.PI * i) / n), r * Math.sin((2 * Math.PI * i) / n)]);
+    const [s] = simplifyContours([c], 0.01);
+    expect(s.length).toBeLessThan(600);
+    expect(s.length).toBeGreaterThanOrEqual(3);
+    let maxDev = 0;
+    for (const p of c) {
+      let best = Infinity;
+      for (let i = 0; i < s.length; i++) {
+        const a = s[i];
+        const b = s[(i + 1) % s.length];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)));
+        best = Math.min(best, Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy));
+      }
+      maxDev = Math.max(maxDev, best);
+    }
+    expect(maxDev).toBeLessThanOrEqual(0.01 + 1e-9);
+  });
+
+  it('laesst ein Quadrat bei 4 Punkten', () => {
+    const sq = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    expect(simplifyContours([sq])[0]).toHaveLength(4);
+  });
+
+  it('faellt nie unter 3 Punkte', () => {
+    const thin = [[0, 0], [5, 0.0001], [10, 0], [5, -0.0001]];
+    expect(simplifyContours([thin])[0].length).toBeGreaterThanOrEqual(3);
+    const line = [[0, 0], [1, 0], [2, 0], [3, 0]];
+    expect(simplifyContours([line])[0].length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('ueberlaeuft bei 200000 fast kollinearen Punkten nicht den Stack', () => {
+    const n = 200000;
+    const c = Array.from({ length: n }, (_, i) => [i * 0.001, (i % 2) * 1e-5]);
+    const s = simplifyContours([c], 0.01)[0];
+    expect(s.length).toBeGreaterThanOrEqual(3);
+    expect(s.length).toBeLessThan(10);
+  });
+});
