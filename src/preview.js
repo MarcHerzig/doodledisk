@@ -121,10 +121,11 @@ export function createPreview(canvas, { onDrag }) {
       }
       render();
     },
-    setDisk(durchmesser, dicke) {
+    setDisk(durchmesser, dicke, rimRadius) {
       radius = durchmesser / 2;
       thickness = dicke;
-      rim.scale.set(radius, radius, 1);
+      const rr = Number.isFinite(rimRadius) ? rimRadius : radius;
+      rim.scale.set(rr, rr, 1);
       rim.position.z = dicke + 0.05;
       render();
     },

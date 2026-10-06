@@ -4,6 +4,7 @@ import { fitContours, clampState } from './disk.js';
 import { createStore } from './state.js';
 import { createPreview } from './preview.js';
 import { stlBuffer, downloadStl } from './export.js';
+import { needsContours, exportName, fitLimit, rimRadius, shrinkSkalierung } from './setui.js';
 
 const $ = (sel) => document.querySelector(sel);
 const store = createStore();
@@ -25,23 +26,24 @@ function restartWorker() {
   if (worker) worker.terminate();
   worker = null;
   inflight = false;
-  lastFine = null;
+  lastFine = {};
+  wanted.clear();
   failures++;
   if (failures >= MAX_FAILS) {
-    pending = null;
+    pending = [];
     $('#busy').hidden = true;
-    result = { warnings: [{ level: 'rot', text: 'Die Berechnung kann in diesem Browser nicht gestartet werden. Bitte Seite neu laden oder einen aktuellen Browser nutzen.' }], stats: null };
+    result = results.schablone = { warnings: [{ level: 'rot', text: 'Die Berechnung kann in diesem Browser nicht gestartet werden. Bitte Seite neu laden oder einen aktuellen Browser nutzen.' }], stats: null };
     renderMessages();
     updateExport();
     return; // kein weiterer Worker, bis eine neue Anfrage kommt
   }
   worker = makeWorker();
   if (store.get().contours.length) {
-    result = { warnings: [{ level: 'rot', text: 'Berechnung abgebrochen, bitte erneut versuchen.' }], stats: null };
+    result = results.schablone = { warnings: [{ level: 'rot', text: 'Berechnung abgebrochen, bitte erneut versuchen.' }], stats: null };
   }
   renderMessages();
   updateExport();
-  if (pending) pump();
+  if (pending.length) pump();
   else $('#busy').hidden = true;
 }
 
@@ -55,11 +57,18 @@ const preview = createPreview($('#view'), { onDrag });
 let version = 0;
 let seq = 0;
 let inflight = false;
-let pending = null;
+let pending = []; // wartende Anfragen { fine, part }, höchstens eine pro (part, fine)
 let timers = [];
 let inputMessages = [];
-let result = { warnings: [], stats: null };
-let lastFine = null;
+const results = {}; // Meldungen und Kennzahlen der letzten aktuellen Feinberechnung pro Teil
+let result = { warnings: [], stats: null }; // Anzeige für das Teil in der Vorschau
+let lastFine = {}; // part -> { version, positions, indices }, wird bei jeder Zustandsänderung geleert
+let previewPart = 'schablone';
+const wanted = new Set(); // Teile, deren Export auf das aktuelle Feinergebnis wartet
+const rotIn = (list) => list.some((w) => w.level === 'rot');
+const modus = () => clampState(store.get()).modus;
+const shownPart = () => (modus() === 'set' ? previewPart : 'schablone');
+const hasContours = () => store.get().contours.length > 0;
 
 const round = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : '');
 
@@ -75,7 +84,8 @@ function renderMessages() {
   const all = [...inputMessages, ...result.warnings];
   const ul = $('#messages');
   ul.replaceChildren();
-  const items = all.length ? all : [{ level: 'gruen', text: store.get().contours.length ? 'Alles in Ordnung.' : 'Noch keine Datei geladen.' }];
+  const noFile = needsContours(shownPart(), modus()) && !hasContours();
+  const items = all.length ? all : [{ level: 'gruen', text: noFile ? 'Noch keine Datei geladen.' : 'Alles in Ordnung.' }];
   for (const m of items) {
     const li = document.createElement('li');
     li.className = m.level;
@@ -87,26 +97,44 @@ function renderMessages() {
   $('#stats').textContent = st ? `${st.ausschnitte} Ausschnitt(e) · ${st.volumeCm3.toFixed(1)} cm³ · ca. ${st.minutes} min Druckzeit (Schätzung)` : '';
 }
 
-function updateExport() {
-  $('#export').disabled = !(lastFine && !result.warnings.some((w) => w.level === 'rot') && !inputMessages.some((m) => m.level === 'rot'));
+function schabloneOk() {
+  return !rotIn(results.schablone?.warnings || []) && !rotIn(inputMessages);
 }
 
-function request(fine) {
-  pending = { fine };
+function updateExport() {
+  const set = modus() === 'set';
+  $('#export').hidden = set;
+  for (const el of document.querySelectorAll('.set-only')) el.hidden = !set;
+  $('#export').disabled = !(lastFine.schablone && schabloneOk());
+  $('[data-export="schablone"]').disabled = !(hasContours() && schabloneOk());
+}
+
+function request(fine, part = shownPart()) {
+  if (!needsContours(part, modus()) || hasContours()) {
+    pending = pending.filter((p) => !(p.part === part && p.fine === fine));
+    pending.push({ fine, part });
+  }
   pump();
 }
 
 function pump() {
-  if (inflight || !pending) return;
-  const { fine } = pending;
-  pending = null;
+  if (inflight) return;
+  const next = pending.shift();
+  if (!next) return;
+  const { fine, part } = next;
   inflight = true;
   $('#busy').hidden = false;
   if (!worker) {
     failures = MAX_FAILS - 1; // ein weiterer Versuch, danach greift die Obergrenze erneut
     worker = makeWorker();
   }
-  worker.postMessage({ id: ++seq, version, fine, state: store.get() });
+  worker.postMessage({ id: ++seq, version, fine, part, state: store.get() });
+}
+
+function download(part) {
+  const f = lastFine[part];
+  if (!f) return;
+  downloadStl(exportName(part, clampState(store.get()), store.get().fileName), stlBuffer(f.positions, f.indices));
 }
 
 function onWorkerMessage(e) {
@@ -117,46 +145,92 @@ function onWorkerMessage(e) {
     return;
   }
   inflight = false;
-  if (!pending) $('#busy').hidden = true;
+  if (!pending.length) $('#busy').hidden = true;
   const current = m.version === version;
-  if (!store.get().contours.length) {
+  const part = m.part || 'schablone';
+  if (needsContours(part, modus()) && !hasContours()) {
     pump();
     return;
   }
   if (!m.ok) {
     if (current) {
-      result = { warnings: [{ level: 'rot', text: m.error }], stats: null };
-      lastFine = null;
+      results[part] = { warnings: [{ level: 'rot', text: m.error }], stats: null };
+      lastFine[part] = null;
+      wanted.delete(part);
+      if (part === shownPart()) result = results[part];
       renderMessages();
       updateExport();
     }
   } else {
-    preview.setMesh(m.positions, m.indices);
+    if (part === shownPart()) preview.setMesh(m.positions, m.indices);
     if (m.fine && current) {
-      result = { warnings: m.warnings, stats: m.stats };
-      lastFine = { positions: m.positions, indices: m.indices };
+      results[part] = { warnings: m.warnings, stats: m.stats };
+      lastFine[part] = { version: m.version, positions: m.positions, indices: m.indices };
+      if (part === shownPart()) result = results[part];
       renderMessages();
       updateExport();
+      if (wanted.delete(part) && (part !== 'schablone' || !rotIn(m.warnings))) download(part);
     }
   }
   pump();
 }
 
-function schedule() {
-  version++;
+function requestPreview() {
   timers.forEach(clearTimeout);
-  lastFine = null;
-  updateExport();
-  if (!store.get().contours.length) return;
-  timers = [setTimeout(() => request(false), 30), setTimeout(() => request(true), 350)];
+  const part = shownPart();
+  if (needsContours(part, modus()) && !hasContours()) return;
+  timers = [setTimeout(() => request(false, part), 30), setTimeout(() => request(true, part), 350)];
 }
 
+function schedule() {
+  version++;
+  pending = [];
+  lastFine = {};
+  wanted.clear();
+  updateExport();
+  requestPreview();
+}
+
+let fitKey = '';
 store.subscribe((state, meta) => {
   syncInputs(state, meta.from);
   const c = clampState(state);
-  preview.setDisk(c.durchmesser, c.dicke);
+  // Moduswechsel oder anderer Durchmesser: Motiv nur verkleinern, wenn es den neuen Grenzradius überschreitet.
+  const key = `${c.modus}|${c.durchmesser}`;
+  if (key !== fitKey) {
+    fitKey = key;
+    const sk = shrinkSkalierung(state.contours, state.skalierung, fitLimit(c));
+    if (sk !== state.skalierung) {
+      store.set({ skalierung: sk });
+      return;
+    }
+  }
+  syncMode(c);
+  preview.setDisk(c.durchmesser, c.dicke, rimRadius(c));
   schedule();
+  renderMessages();
 });
+
+function syncMode(c) {
+  for (const r of document.querySelectorAll('input[name="modus"]')) r.checked = r.value === c.modus;
+  for (const b of document.querySelectorAll('[data-part]')) b.setAttribute('aria-pressed', String(b.dataset.part === shownPart()));
+}
+
+for (const r of document.querySelectorAll('input[name="modus"]')) {
+  r.addEventListener('change', () => r.checked && store.set({ modus: r.value }));
+}
+for (const b of document.querySelectorAll('[data-part]')) {
+  b.addEventListener('click', () => {
+    previewPart = b.dataset.part;
+    syncMode(clampState(store.get()));
+    result = results[previewPart] || { warnings: [], stats: null };
+    const f = lastFine[previewPart];
+    if (f) preview.setMesh(f.positions, f.indices);
+    else preview.hideMesh();
+    renderMessages();
+    requestPreview();
+  });
+}
 
 document.addEventListener('input', (e) => {
   const el = e.target.closest?.('[data-key]');
@@ -173,7 +247,9 @@ const DROP_TEXT = 'DXF hierher ziehen oder klicken';
 function failLoad(messages) {
   inputMessages = messages;
   result = { warnings: [], stats: null };
-  lastFine = null;
+  results.schablone = result;
+  lastFine = {};
+  wanted.clear();
   $('#dropText').textContent = DROP_TEXT;
   store.set({ contours: [], fileName: '' });
   renderMessages();
@@ -195,7 +271,8 @@ async function loadFile(file) {
       return;
     }
     if (!contours.length) throw new Error('Keine geschlossene Kontur gefunden.');
-    const fit = fitContours(contours, clampState(store.get()).durchmesser);
+    const c0 = clampState(store.get());
+    const fit = fitContours(contours, c0.durchmesser, fitLimit(c0));
     const skipped = Object.entries(ignored).map(([t, n]) => `${t} ×${n}`).join(', ');
     if (skipped) inputMessages.push({ level: 'gelb', text: `Ignorierte Elemente: ${skipped}.` });
     if (unitFactor !== 1) inputMessages.push({ level: 'gelb', text: `Einheiten umgerechnet (Faktor ${unitFactor} nach mm).` });
@@ -226,17 +303,29 @@ drop.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); 
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); });
 
-$('#export').addEventListener('click', () => {
-  if (!lastFine) return;
-  const s = clampState(store.get());
-  downloadStl(`${store.get().fileName || 'doodledisk'}-${s.durchmesser}x${s.dicke}.stl`, stlBuffer(lastFine.positions, lastFine.indices));
-});
+$('#export').addEventListener('click', () => download('schablone'));
+for (const b of document.querySelectorAll('[data-export]')) {
+  b.addEventListener('click', () => {
+    const part = b.dataset.export;
+    if (part === 'schablone' && !(hasContours() && schabloneOk())) return;
+    if (lastFine[part]) {
+      download(part);
+    } else {
+      wanted.add(part);
+      request(true, part);
+    }
+  });
+}
 
 syncInputs(store.get());
 {
   const c = clampState(store.get());
-  preview.setDisk(c.durchmesser, c.dicke);
+  fitKey = `${c.modus}|${c.durchmesser}`;
+  preview.setDisk(c.durchmesser, c.dicke, rimRadius(c));
+  syncMode(c);
 }
+updateExport();
 renderMessages();
+if (modus() === 'set') requestPreview();
 
 worker = makeWorker();

@@ -20,6 +20,7 @@ export const DEFAULTS = {
 export const LAYER = 0.2;
 const OVERLAP = 0.01;
 const FIT = 0.8;
+export const SET_MAX_D = 200; // Ring samt Wand muss auf ein A4-Blatt (210 mm breit) passen
 
 const LIMITS = {
   durchmesser: [30, 250],
@@ -38,6 +39,7 @@ export function clampState(s) {
     const v = Number(s[k]);
     out[k] = Number.isFinite(v) && s[k] !== '' && s[k] !== null ? Math.min(hi, Math.max(lo, v)) : DEFAULTS[k];
   }
+  if (s.modus === 'set') out.durchmesser = Math.min(out.durchmesser, SET_MAX_D);
   out.fasenTiefe = Math.min(out.fasenTiefe, out.dicke);
   out.fasenOben = s.fasenOben !== false;
   out.modus = s.modus === 'set' ? 'set' : 'einzel';
@@ -50,7 +52,7 @@ export function clampState(s) {
   return out;
 }
 
-export function fitContours(contours, durchmesser) {
+export function fitContours(contours, durchmesser, limitRadius) {
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const c of contours) {
     for (const [x, y] of c) {
@@ -66,7 +68,7 @@ export function fitContours(contours, durchmesser) {
   const centered = contours.map((c) => c.map(([x, y]) => [x - cx, y - cy]));
   let maxR = 0;
   for (const c of centered) for (const [x, y] of c) maxR = Math.max(maxR, Math.hypot(x, y));
-  const limit = (FIT * durchmesser) / 2;
+  const limit = Number.isFinite(limitRadius) && limitRadius > 0 ? limitRadius : (FIT * durchmesser) / 2;
   return { contours: centered, skalierung: maxR > limit ? limit / maxR : 1 };
 }
 
@@ -107,11 +109,18 @@ export function buildDisk(wasm, rawState, { fine = true } = {}) {
   let disk = Manifold.cylinder(state.dicke, R, R, 128);
   if (state.modus === 'set') {
     // Passkerbe bei 12 Uhr über die volle Dicke
-    const key = Manifold.cube([KEY_W, KEY_D + 1, state.dicke + 2 * OVERLAP]).translate([-KEY_W / 2, R - KEY_D, -OVERLAP]);
-    const notched = disk.subtract(key);
-    disk.delete();
-    key.delete();
-    disk = notched;
+    const ks = scope();
+    try {
+      const key = ks.t(ks.t(Manifold.cube([KEY_W, KEY_D + 1, state.dicke + 2 * OVERLAP])).translate([-KEY_W / 2, R - KEY_D, -OVERLAP]));
+      const notched = disk.subtract(key);
+      disk.delete();
+      disk = notched;
+    } catch (err) {
+      disk.delete();
+      throw err;
+    } finally {
+      ks.done();
+    }
   }
   if (!state.contours.length) return disk;
 

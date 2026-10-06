@@ -28,6 +28,17 @@ input, select, button { font: inherit; color: var(--text); background: var(--bg)
 input[type="range"] { padding: 0; accent-color: var(--accent); }
 button { cursor: pointer; }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
+[hidden] { display: none !important; }
+.set-only { display: grid; gap: 8px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg label { display: flex; grid-template-columns: none; gap: 6px; align-items: center; }
+.parts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.parts span { color: var(--muted); }
+.parts button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+#exportSet { grid-template-columns: 1fr; }
+#exportSet button { background: var(--accent); color: #1b1300; border: 0; padding: 10px; font-weight: 700; }
+#exportSet button:disabled { opacity: 0.4; }
+.note { margin: 0; color: var(--muted); font-size: 12px; }
 #export { background: var(--accent); color: #1b1300; border: 0; padding: 10px; font-weight: 700; }
 #messages { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 #messages li { padding-left: 18px; position: relative; font-size: 13px; }

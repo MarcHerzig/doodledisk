@@ -30,6 +30,13 @@ describe('fitContours / transformContours', () => {
     expect(maxR * skalierung).toBeCloseTo(0.8 * 60, 6);
   });
 
+  it('nutzt einen übergebenen Grenzradius statt 80 % des Radius', () => {
+    const big = square(200);
+    const { contours, skalierung } = fitContours([big], 120, 30);
+    const maxR = Math.max(...contours[0].map(([x, y]) => Math.hypot(x, y)));
+    expect(maxR * skalierung).toBeCloseTo(30, 6);
+  });
+
   it('lässt kleine Motive unverändert (Skalierung 1)', () => {
     expect(fitContours([square(20)], 120).skalierung).toBe(1);
   });
@@ -168,5 +175,12 @@ describe('Set-Modus', () => {
     const m = buildDisk(wasm, { ...DEFAULTS, modus: 'set', contours: [square(20)] });
     expect(isOk(m)).toBe(true);
     m.delete();
+  });
+});
+
+describe('Set-Modus Durchmesser', () => {
+  it('clampState: im Set-Modus höchstens 200, Einzelmodus unverändert', () => {
+    expect(clampState({ ...DEFAULTS, modus: 'set', durchmesser: 250 }).durchmesser).toBe(200);
+    expect(clampState({ ...DEFAULTS, modus: 'einzel', durchmesser: 250 }).durchmesser).toBe(250);
   });
 });

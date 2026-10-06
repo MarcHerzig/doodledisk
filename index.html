@@ -16,6 +16,27 @@
       <aside id="panel">
         <h1>Doodle Disk</h1>
 
+        <fieldset id="modusBox">
+          <legend>Modus</legend>
+          <div class="seg" role="radiogroup" aria-label="Modus">
+            <label><input type="radio" name="modus" value="einzel" />Einzelschablone</label>
+            <label><input type="radio" name="modus" value="set" />Set</label>
+          </div>
+          <div class="set-only" hidden>
+            <label>Anzahl Zahlen<input type="number" data-key="zahlen" min="2" max="36" step="1" /></label>
+            <label>Blockdicke (mm)<input type="number" data-key="blockdicke" min="1" max="30" step="0.5" /></label>
+            <label>Klemme an
+              <select data-key="seite"><option value="links">links</option><option value="unten">unten</option></select>
+            </label>
+            <div class="parts" role="group" aria-label="Vorschau">
+              <span>Vorschau:</span>
+              <button type="button" data-part="schablone" aria-pressed="true">Schablone</button>
+              <button type="button" data-part="abdeckung" aria-pressed="false">Abdeckung</button>
+              <button type="button" data-part="halter" aria-pressed="false">Halter</button>
+            </div>
+          </div>
+        </fieldset>
+
         <div id="drop" tabindex="0" role="button">
           <span id="dropText">DXF hierher ziehen oder klicken</span>
           <input type="file" id="file" hidden />
@@ -48,6 +69,12 @@
         </section>
 
         <button type="button" id="export" disabled>STL herunterladen</button>
+        <div id="exportSet" class="set-only" hidden>
+          <button type="button" data-export="schablone" disabled>Schablone STL</button>
+          <button type="button" data-export="abdeckung">Abdeckung STL</button>
+          <button type="button" data-export="halter">Halter STL</button>
+          <p class="note">Halter: Stützen im Slicer einschalten, PETG empfohlen. Abdeckung dreht sich auf der Schablone, Zahl auf den Pfeil am Halter drehen.</p>
+        </div>
       </aside>
     </main>
     <script type="module" src="/src/main.js"></script>

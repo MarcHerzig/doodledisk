@@ -1,14 +1,19 @@
 import { DEFAULTS } from './disk.js';
 
 const KEY = 'doodledisk.settings.v1';
-const PERSIST = ['durchmesser', 'dicke', 'fasenTiefe', 'fasenAufweitung', 'fasenOben'];
+const PERSIST = ['durchmesser', 'dicke', 'fasenTiefe', 'fasenAufweitung', 'fasenOben', 'modus', 'zahlen', 'blockdicke', 'seite'];
+const OK = {
+  fasenOben: (v) => typeof v === 'boolean',
+  modus: (v) => v === 'einzel' || v === 'set',
+  seite: (v) => v === 'links' || v === 'unten',
+};
 
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || '{}');
     const out = {};
     for (const k of PERSIST) {
-      if (k === 'fasenOben' ? typeof raw[k] === 'boolean' : Number.isFinite(raw[k])) out[k] = raw[k];
+      if ((OK[k] || Number.isFinite)(raw[k])) out[k] = raw[k];
     }
     return out;
   } catch {
