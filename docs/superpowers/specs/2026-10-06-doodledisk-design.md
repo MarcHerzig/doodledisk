@@ -30,7 +30,7 @@ SVG/DXF-Export, Bild-Upload, Batch/ZIP, Aufhängeloch, erhabener Rand, Gravur, B
 | Modul | Aufgabe | Eingabe → Ausgabe |
 |---|---|---|
 | `dxf.js` | DXF lesen. Entities LINE, ARC, CIRCLE, LWPOLYLINE, SPLINE; Bögen und Splines mit fester Toleranz abtasten. `$INSUNITS` auswerten (Zoll → mm). | DXF-Text → Polylinien + Liste ignorierter Entities |
-| `contours.js` | Segmente mit Toleranz (0,01 mm) zu geschlossenen Konturen verketten; Aussenkontur und Inseln erkennen. | Polylinien → geschlossene Konturen oder Fehler mit Position |
+| `contours.js` | Segmente mit Toleranz (0,01 mm) zu geschlossenen Konturen verketten; Aussenkontur und Inseln werden über die EvenOdd-Füllregel richtig behandelt (keine eigene Klassifizierung). | Polylinien → geschlossene Konturen oder Fehler mit Position |
 | `disk.js` | Zylinder minus Ausschnitt; Motiv vorher skalieren, drehen, verschieben; Fase als Schichtstapel. | Konturen + Parameter → Manifold-Mesh |
 | `preview.js` | three.js-Szene, Orbit-Kamera, Motiv per Maus ziehen. | Mesh → Bild |
 | `export.js` | Binär-STL schreiben, Download. | Mesh → Datei |
@@ -57,7 +57,7 @@ Der Ausschnitt ist oben breiter als unten, damit die Stiftspitze der Kante folgt
 | Kontur nicht geschlossen (Lücke > Toleranz) | Stopp, Meldung „Lücke bei x, y“, Stelle in der Vorschau rot |
 | Selbstüberschneidung | Warnung, Berechnung läuft trotzdem |
 | Motiv grösser als Scheibe | Beim Laden auf 80 % des Durchmessers eingepasst |
-| Motiv ragt über den Rand | Roter Rand, Export mit Warnung möglich |
+| Motiv ragt über den Rand | Gelbe Warnung, Rand in der Vorschau rot, Export bleibt möglich |
 | Steg < 1 mm (Ausschnitt–Rand oder Ausschnitt–Ausschnitt) | Gelbe Warnung |
 | Nicht unterstützte Entities (Text, Blöcke) | Liste der ignorierten Elemente |
 | Zoll-Einheiten | Umrechnung und Hinweis |
@@ -71,7 +71,7 @@ Eine Seite: links 3D-Vorschau (dunkler Grund), rechts Bedienfeld (auf dem Handy 
 1. Drop-Zone „DXF hierher ziehen“, danach Dateiname mit „Andere Datei“.
 2. Scheibe: Durchmesser, Dicke, Fase.
 3. Motiv: Regler Grösse und Drehung, Zahlenfelder X/Y, „Zentrieren“, Ziehen mit der Maus.
-4. Prüfung: Meldungsliste mit Ampel, dünnster Steg, Anzahl Ausschnitte, Druckdauer-Schätzung.
+4. Prüfung: Meldungsliste mit Ampel, Anzahl Ausschnitte, Volumen, Druckdauer-Schätzung.
 5. Export: „STL herunterladen“, Dateiname `<dxf-name>-120x3.stl`.
 
 Einstellungen (ohne DXF) merkt sich der Browser in `localStorage`, mit try/catch gekapselt.
