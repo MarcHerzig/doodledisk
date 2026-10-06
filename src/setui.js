@@ -1,5 +1,8 @@
 // Reine Hilfsfunktionen für die Set-Oberfläche (ohne DOM, testbar).
 import { dims, FIT_P } from './setparams.js';
+import { SET_MAX_D } from './disk.js';
+
+export { SET_MAX_D };
 
 export const PARTS = ['schablone', 'abdeckung', 'halter'];
 
@@ -34,4 +37,21 @@ export function shrinkSkalierung(contours, skalierung, limit) {
   for (const c of contours) for (const [x, y] of c) maxR = Math.max(maxR, Math.hypot(x, y));
   if (maxR * skalierung > limit * (1 + 1e-9)) return limit / maxR;
   return skalierung;
+}
+
+const STRING_KEYS = { seite: ['links', 'unten'] };
+const round = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : '');
+
+// Wert eines Formularfelds (data-key) in den Zustandswert übersetzen.
+export function readFieldValue(key, raw) {
+  if (key === 'fasenOben') return raw === '1';
+  if (STRING_KEYS[key]) return STRING_KEYS[key].includes(raw) ? raw : STRING_KEYS[key][0];
+  return parseFloat(raw);
+}
+
+// Zustandswert für die Anzeige im Formularfeld.
+export function formatFieldValue(key, v) {
+  if (key === 'fasenOben') return v ? '1' : '0';
+  if (STRING_KEYS[key]) return STRING_KEYS[key].includes(v) ? v : STRING_KEYS[key][0];
+  return String(round(v));
 }
