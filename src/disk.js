@@ -40,13 +40,21 @@ export function clampState(s) {
 }
 
 export function fitContours(contours, durchmesser) {
-  const pts = contours.flat();
-  const xs = pts.map((p) => p[0]);
-  const ys = pts.map((p) => p[1]);
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const c of contours) {
+    for (const [x, y] of c) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (minX === Infinity) return { contours: [], skalierung: 1 };
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
   const centered = contours.map((c) => c.map(([x, y]) => [x - cx, y - cy]));
-  const maxR = Math.max(...centered.flat().map(([x, y]) => Math.hypot(x, y)));
+  let maxR = 0;
+  for (const c of centered) for (const [x, y] of c) maxR = Math.max(maxR, Math.hypot(x, y));
   const limit = (FIT * durchmesser) / 2;
   return { contours: centered, skalierung: maxR > limit ? limit / maxR : 1 };
 }
@@ -99,9 +107,9 @@ export function buildDisk(wasm, rawState, { fine = true } = {}) {
     });
     const cutter = s.t(Manifold.union(cutters));
     const result = disk.subtract(cutter);
-    disk.delete();
     return result;
   } finally {
+    disk.delete();
     s.done();
   }
 }

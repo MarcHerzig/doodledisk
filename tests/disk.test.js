@@ -34,6 +34,15 @@ describe('fitContours / transformContours', () => {
     expect(fitContours([square(20)], 120).skalierung).toBe(1);
   });
 
+  it('leere Eingabe ergibt Skalierung 1', () => {
+    expect(fitContours([], 120)).toEqual({ contours: [], skalierung: 1 });
+  });
+
+  it('verträgt 200000 Punkte ohne Stack-Überlauf', () => {
+    const line = Array.from({ length: 200000 }, (_, i) => [i * 0.001, (i % 7) * 0.01]);
+    expect(() => fitContours([line], 120)).not.toThrow();
+  });
+
   it('skaliert, dreht und verschiebt', () => {
     const [[[x, y]]] = transformContours([[[1, 0]]], { skalierung: 2, winkel: 90, offsetX: 1, offsetY: 1 });
     expect(x).toBeCloseTo(1, 9);
@@ -108,6 +117,21 @@ describe('buildDisk', () => {
     const ring = [square(40), square(20)];
     const d = buildDisk(wasm, { ...DEFAULTS, fasenTiefe: 0, contours: ring });
     expect(close(volumeOf(d), diskVolume(60, 3) - (1600 - 400) * 3, 0.002)).toBe(true);
+    d.delete();
+  });
+
+  it('Fehlerpfad: wirft bei NaN-Konturen, danach funktioniert buildDisk weiter', () => {
+    const bad = [[[0, 0], [NaN, 1], [1, NaN]]];
+    let threw = false;
+    let r;
+    try {
+      r = buildDisk(wasm, { ...DEFAULTS, contours: bad });
+    } catch {
+      threw = true;
+    }
+    if (!threw) r.delete();
+    const d = buildDisk(wasm, { ...DEFAULTS, contours: [square(20)] });
+    expect(isOk(d)).toBe(true);
     d.delete();
   });
 });
