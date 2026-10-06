@@ -72,6 +72,10 @@ worker.onmessage = (e) => {
   const m = e.data;
   inflight = false;
   if (!pending) $('#busy').hidden = true;
+  if (m.version !== version || !store.get().contours.length) {
+    pump();
+    return;
+  }
   if (!m.ok) {
     result = { warnings: [{ level: 'rot', text: m.error }], stats: null };
     lastFine = null;
@@ -125,7 +129,9 @@ async function loadFile(file) {
       preview.showDraft(polylines, gaps);
       store.set({ contours: [], fileName: '' });
       result = { warnings: [], stats: null };
+      lastFine = null;
       renderMessages();
+      updateExport();
       return;
     }
     if (!contours.length) throw new Error('Keine geschlossene Kontur gefunden.');
@@ -140,7 +146,9 @@ async function loadFile(file) {
     renderMessages();
   } catch (err) {
     inputMessages = [{ level: 'rot', text: String(err.message || err) }];
+    lastFine = null;
     renderMessages();
+    updateExport();
   }
 }
 
@@ -151,7 +159,7 @@ drop.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && 
 fileInput.addEventListener('change', () => loadFile(fileInput.files[0]));
 for (const ev of ['dragenter', 'dragover']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); });
 for (const ev of ['dragleave', 'drop']) drop.addEventListener(ev, () => drop.classList.remove('over'));
-drop.addEventListener('drop', (e) => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); });
+drop.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); loadFile(e.dataTransfer.files[0]); });
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); });
 
