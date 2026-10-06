@@ -1,4 +1,5 @@
 import { scope } from './wasm.js';
+import { KEY_W, KEY_D } from './setparams.js';
 
 export const DEFAULTS = {
   durchmesser: 120,
@@ -10,6 +11,10 @@ export const DEFAULTS = {
   offsetY: 0,
   winkel: 0,
   skalierung: 1,
+  modus: 'einzel',
+  zahlen: 12,
+  blockdicke: 4,
+  seite: 'links',
 };
 
 export const LAYER = 0.2;
@@ -35,6 +40,12 @@ export function clampState(s) {
   }
   out.fasenTiefe = Math.min(out.fasenTiefe, out.dicke);
   out.fasenOben = s.fasenOben !== false;
+  out.modus = s.modus === 'set' ? 'set' : 'einzel';
+  const z = Number(s.zahlen);
+  out.zahlen = Number.isFinite(z) && s.zahlen !== '' && s.zahlen !== null ? Math.min(36, Math.max(2, Math.round(z))) : DEFAULTS.zahlen;
+  const b = Number(s.blockdicke);
+  out.blockdicke = Number.isFinite(b) && s.blockdicke !== '' && s.blockdicke !== null ? Math.min(30, Math.max(1, b)) : DEFAULTS.blockdicke;
+  out.seite = s.seite === 'unten' ? 'unten' : 'links';
   out.contours = s.contours || [];
   return out;
 }
@@ -93,7 +104,15 @@ export function buildDisk(wasm, rawState, { fine = true } = {}) {
   const { Manifold, CrossSection } = wasm;
   const state = clampState(rawState);
   const R = state.durchmesser / 2;
-  const disk = Manifold.cylinder(state.dicke, R, R, 128);
+  let disk = Manifold.cylinder(state.dicke, R, R, 128);
+  if (state.modus === 'set') {
+    // Passkerbe bei 12 Uhr über die volle Dicke
+    const key = Manifold.cube([KEY_W, KEY_D + 1, state.dicke + 2 * OVERLAP]).translate([-KEY_W / 2, R - KEY_D, -OVERLAP]);
+    const notched = disk.subtract(key);
+    disk.delete();
+    key.delete();
+    disk = notched;
+  }
   if (!state.contours.length) return disk;
 
   const s = scope();

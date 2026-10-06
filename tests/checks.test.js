@@ -73,3 +73,15 @@ describe('analyze', () => {
     expect(texts(r)).not.toMatch(/fällt heraus/);
   });
 });
+
+describe('analyze im Set-Modus', () => {
+  it('Motiv bei Radius 50 warnt im Set-Modus (Zahlenrand), im Einzelmodus nicht', () => {
+    const c = [box(48, -2, 50, 2)];
+    const einzel = analyze(wasm, { ...DEFAULTS, fasenTiefe: 0, contours: c });
+    expect(einzel.warnings.some((w) => w.rim)).toBe(false);
+    const set = analyze(wasm, { ...DEFAULTS, modus: 'set', fasenTiefe: 0, contours: c });
+    const rim = set.warnings.find((w) => w.rim);
+    expect(rim.text).toBe('Das Motiv ragt in den Zahlenrand.');
+    expect(rim.level).toBe('gelb');
+  });
+});

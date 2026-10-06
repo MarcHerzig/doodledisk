@@ -135,3 +135,38 @@ describe('buildDisk', () => {
     d.delete();
   });
 });
+
+describe('Set-Modus', () => {
+  it('clampState: modus, zahlen, blockdicke, seite', () => {
+    const c = (o) => clampState({ ...DEFAULTS, contours: [], ...o });
+    expect(DEFAULTS.modus).toBe('einzel');
+    expect(c({}).modus).toBe('einzel');
+    expect(c({ modus: 'set' }).modus).toBe('set');
+    expect(c({ modus: 'x' }).modus).toBe('einzel');
+    expect(c({ zahlen: NaN }).zahlen).toBe(12);
+    expect(c({ zahlen: '' }).zahlen).toBe(12);
+    expect(c({ zahlen: 1 }).zahlen).toBe(2);
+    expect(c({ zahlen: 99 }).zahlen).toBe(36);
+    expect(c({ zahlen: 7.6 }).zahlen).toBe(8);
+    expect(c({ blockdicke: NaN }).blockdicke).toBe(4);
+    expect(c({ blockdicke: 0 }).blockdicke).toBe(1);
+    expect(c({ blockdicke: 99 }).blockdicke).toBe(30);
+    expect(c({ seite: 'unten' }).seite).toBe('unten');
+    expect(c({ seite: 'oben' }).seite).toBe('links');
+  });
+
+  it('Passkerbe im Set-Modus: Volumen kleiner um etwa KEY_W*KEY_D*T_S', () => {
+    const a = buildDisk(wasm, { ...DEFAULTS, contours: [] });
+    const b = buildDisk(wasm, { ...DEFAULTS, modus: 'set', contours: [] });
+    const diff = volumeOf(a) - volumeOf(b);
+    a.delete();
+    b.delete();
+    expect(close(diff, 6.4 * 1.6 * 3, 0.1)).toBe(true);
+  });
+
+  it('Passkerbe auch mit Motiv, Modell bleibt wasserdicht', () => {
+    const m = buildDisk(wasm, { ...DEFAULTS, modus: 'set', contours: [square(20)] });
+    expect(isOk(m)).toBe(true);
+    m.delete();
+  });
+});

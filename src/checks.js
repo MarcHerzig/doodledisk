@@ -1,4 +1,5 @@
 import { scope } from './wasm.js';
+import { BAND } from './setparams.js';
 import { clampState, transformContours } from './disk.js';
 import { findIntersections } from './contours.js';
 
@@ -43,8 +44,14 @@ export function analyze(wasm, rawState) {
       warnings.push({ level: 'gelb', text: `Eine Kontur schneidet sich selbst bei x=${fmt(p.x)}, y=${fmt(p.y)}.` });
     }
 
-    if (s.t(cut.subtract(disc)).area() > RIM_AREA) {
-      warnings.push({ level: 'gelb', rim: true, text: 'Das Motiv ragt über den Scheibenrand.' });
+    const setMode = state.modus === 'set';
+    const rimDisc = setMode ? s.t(CrossSection.circle(state.durchmesser / 2 - BAND, 128)) : disc;
+    if (s.t(cut.subtract(rimDisc)).area() > RIM_AREA) {
+      warnings.push({
+        level: 'gelb',
+        rim: true,
+        text: setMode ? 'Das Motiv ragt in den Zahlenrand.' : 'Das Motiv ragt über den Scheibenrand.',
+      });
     }
 
     const material = s.t(disc.subtract(cut));
